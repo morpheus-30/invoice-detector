@@ -176,8 +176,10 @@ flowchart TD
     A[New invoice fingerprint] --> B{Exact content fingerprint<br/>number+total hash matches?}
     B -- Yes --> D([Duplicate: CONTENT_FINGERPRINT]):::warn
     B -- No --> C{Fuzzy field match?<br/>number ~matches + total close}
-    C -- Yes --> E([Duplicate: CONTENT_FUZZY<br/>handles a different photo]):::warn
-    C -- No --> F{Exact image hash matches?}
+    C -- Yes --> E([Duplicate: CONTENT_FUZZY<br/>another photo of same bill]):::warn
+    C -- No --> T{OCR text overlap high?<br/>shared tokens / numbers}
+    T -- Yes --> TE([Duplicate: TEXT_SIMILARITY<br/>survives cropping / re-shooting]):::warn
+    T -- No --> F{Exact image hash matches?}
     F -- Yes --> G([Duplicate: EXACT_IMAGE]):::warn
     F -- No --> H{Perceptual hash within<br/>Hamming threshold?}
     H -- Yes --> I([Duplicate: PERCEPTUAL_IMAGE]):::warn
@@ -187,8 +189,16 @@ flowchart TD
     classDef warn fill:#EF6C00,color:#fff;
 ```
 
+**Why text overlap matters (cropping):** a crop changes every pixel, so the image
+and perceptual hashes differ, and OCR may not even extract the same fields. But the
+crop's text is a *subset* of the original's. We compare OCR **token sets** with the
+overlap coefficient `|A ∩ B| / min(|A|, |B|)`, which stays near 1.0 when one is a
+subset of the other. To avoid matching two different invoices from the same vendor
+(shared boilerplate), the decision is anchored on overlap of **numeric** tokens
+(amounts, dates, invoice numbers), which genuinely differ between invoices.
+
 **Why fuzzy field matching matters:** the invoice number and total are the same
 across two photos of one bill. The fuzzy step compares the *extracted fields* with
 tolerance — invoice numbers by edit-distance (so `INV-001` still matches `INV-0O1`
 from an OCR slip), confirmed by the total within ~1%, or by total + date + vendor
-when no number was read. That catches re-photographed duplicates that hashing can't.
+when no number was read.

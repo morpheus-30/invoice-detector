@@ -19,8 +19,8 @@ internal interface InvoiceDao {
     @Query("SELECT * FROM invoice_fingerprints WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): InvoiceEntity?
 
-    /** Records with content worth fuzzy-matching against. Newest first. */
-    @Query("SELECT * FROM invoice_fingerprints WHERE invoiceNumber IS NOT NULL OR total IS NOT NULL ORDER BY createdAt DESC")
+    /** Records worth matching against (have extracted fields or OCR text). Newest first. */
+    @Query("SELECT * FROM invoice_fingerprints WHERE invoiceNumber IS NOT NULL OR total IS NOT NULL OR tokenSignature != '' ORDER BY createdAt DESC LIMIT 1000")
     suspend fun contentCandidates(): List<InvoiceEntity>
 
     /** Only the columns needed for perceptual Hamming comparison. */

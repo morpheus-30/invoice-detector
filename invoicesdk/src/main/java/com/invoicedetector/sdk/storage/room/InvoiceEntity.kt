@@ -26,5 +26,6 @@ internal data class InvoiceEntity(
     val total: Double?,
     val dateText: String?,
     val vendor: String?,
+    val tokenSignature: String = "",
     val createdAt: Long
 )

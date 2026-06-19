@@ -11,9 +11,11 @@ import com.invoicedetector.sdk.storage.InvoiceFingerprint
  * the [DuplicateStore], using escalating signals (strongest / most meaningful first):
  *
  *  1. Content fingerprint  - exact normalized invoice number + total (fast O(1) path).
- *  2. Fuzzy content match  - extracted fields match within tolerance. This is what
- *     catches a *different photo* of the same invoice, where the image bytes and
- *     perceptual hash differ but the invoice number/total are (almost) the same.
+ *  2. Field/text scan      - over stored candidates, in one pass:
+ *       a. fuzzy field match  - number/total/date/vendor within tolerance, and
+ *       b. OCR text overlap   - shared token sets (overlap coefficient). This is what
+ *          catches a *cropped* or re-photographed copy: the image bytes and the
+ *          perceptual hash differ, but most of the text is the same.
  *  3. Exact image hash     - the identical file was uploaded before.
  *  4. Perceptual hash      - a visually near-identical photo (Hamming distance
  *     within the configured threshold).
@@ -32,7 +34,8 @@ class DuplicateChecker(
             invoiceNumber = invoice.invoiceNumber,
             total = invoice.total,
             dateText = invoice.dateText,
-            vendor = invoice.vendor
+            vendor = invoice.vendor,
+            tokenSignature = TextFingerprint.signature(invoice.rawText)
         )
 
     /** Returns the strongest duplicate match for [fp], or null if it looks new. */
@@ -49,23 +52,47 @@ class DuplicateChecker(
             }
         }
 
-        // 2. Fuzzy content match against stored records - tolerant of OCR differences
-        //    between two photos of the same invoice. Pick the best-scoring match.
-        if (fp.invoiceNumber != null || fp.total != null) {
-            var best: DuplicateMatch? = null
-            for (candidate in store.contentCandidates()) {
-                val score = ContentMatcher.compare(fp, candidate)
-                if (score.isDuplicate && (best == null || score.similarity > best.similarity)) {
-                    best = DuplicateMatch(
-                        existingRecordId = candidate.id,
-                        existingInvoiceNumber = candidate.invoiceNumber,
-                        matchType = DuplicateMatch.MatchType.CONTENT_FUZZY,
-                        similarity = score.similarity
+        // 2. Single scan over stored candidates: fuzzy fields OR OCR text overlap.
+        val fpTokens = TextFingerprint.tokenSet(fp.tokenSignature)
+        var best: DuplicateMatch? = null
+        fun consider(candidate: DuplicateMatch) {
+            if (best == null || candidate.similarity > best!!.similarity) best = candidate
+        }
+
+        for (candidate in store.contentCandidates()) {
+            // a. Fuzzy field match (invoice number / total / date / vendor).
+            if (fp.invoiceNumber != null || fp.total != null) {
+                val fieldScore = ContentMatcher.compare(fp, candidate)
+                if (fieldScore.isDuplicate) {
+                    consider(
+                        DuplicateMatch(
+                            existingRecordId = candidate.id,
+                            existingInvoiceNumber = candidate.invoiceNumber,
+                            matchType = DuplicateMatch.MatchType.CONTENT_FUZZY,
+                            similarity = fieldScore.similarity
+                        )
                     )
                 }
             }
-            best?.let { return it }
+            // b. OCR text overlap (survives cropping / re-shooting).
+            if (fpTokens.isNotEmpty() && candidate.tokenSignature.isNotEmpty()) {
+                val textScore = TextSimilarityMatcher.compare(
+                    fpTokens,
+                    TextFingerprint.tokenSet(candidate.tokenSignature)
+                )
+                if (textScore.isDuplicate) {
+                    consider(
+                        DuplicateMatch(
+                            existingRecordId = candidate.id,
+                            existingInvoiceNumber = candidate.invoiceNumber,
+                            matchType = DuplicateMatch.MatchType.TEXT_SIMILARITY,
+                            similarity = textScore.similarity
+                        )
+                    )
+                }
+            }
         }
+        best?.let { return it }
 
         // 3. Exact image hash.
         store.findByExactImageHash(fp.exactImageHash)?.let { existing ->

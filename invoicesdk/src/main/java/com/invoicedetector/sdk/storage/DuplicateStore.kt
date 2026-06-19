@@ -58,6 +58,8 @@ data class StoredInvoice(
     val total: Double?,
     val dateText: String?,
     val vendor: String?,
+    /** Space-joined OCR token signature for text-based near-duplicate matching. */
+    val tokenSignature: String = "",
     val createdAt: Long
 )
 
@@ -70,6 +72,8 @@ data class InvoiceFingerprint(
     val total: Double?,
     val dateText: String?,
     val vendor: String?,
+    /** Space-joined OCR token signature for text-based near-duplicate matching. */
+    val tokenSignature: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
 

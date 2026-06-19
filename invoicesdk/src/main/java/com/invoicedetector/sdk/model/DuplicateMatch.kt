@@ -28,6 +28,13 @@ data class DuplicateMatch(
         /** Visually near-identical image (perceptual hash within threshold). */
         PERCEPTUAL_IMAGE,
 
+        /**
+         * The OCR text overlaps heavily with a stored invoice (overlap coefficient),
+         * so it's the same bill even after cropping or re-photographing - when image
+         * hashes and parsed fields don't line up.
+         */
+        TEXT_SIMILARITY,
+
         /** Byte-identical image (exact hash). */
         EXACT_IMAGE
     }

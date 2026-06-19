@@ -58,6 +58,7 @@ private fun InvoiceEntity.toStored() = StoredInvoice(
     total = total,
     dateText = dateText,
     vendor = vendor,
+    tokenSignature = tokenSignature,
     createdAt = createdAt
 )
 
@@ -69,5 +70,6 @@ private fun InvoiceFingerprint.toEntity() = InvoiceEntity(
     total = total,
     dateText = dateText,
     vendor = vendor,
+    tokenSignature = tokenSignature,
     createdAt = createdAt
 )
