@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      The SDK itself needs no permissions. It operates on Bitmaps/Uris handed to
+      it by the host app, and stores its duplicate index in the app's private
+      database. No internet permission is declared on purpose: everything runs
+      on-device.
+    -->
+
+    <application>
+        <!-- Ask Play services to download the OCR model only if a consumer opts in.
+             With the bundled text-recognition dependency the model ships inside the
+             APK, so this is purely a no-op safety hint and never triggers a download. -->
+    </application>
+
+</manifest>

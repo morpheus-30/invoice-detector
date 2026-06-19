@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Invoice Detector</string>
+    <string name="select_invoice">Select invoice image</string>
+    <string name="clear_index">Clear duplicate index</string>
+    <string name="tamper_check">Run image-tamper check (slower)</string>
+    <string name="status_idle">Pick an invoice photo to analyze.</string>
+    <string name="status_processing">Analyzing&#8230;</string>
+    <string name="index_cleared">Duplicate index cleared.</string>
+    <string name="preview_desc">Selected invoice preview</string>
+</resources>
