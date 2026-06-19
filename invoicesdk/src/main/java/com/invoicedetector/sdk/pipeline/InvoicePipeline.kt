@@ -3,8 +3,6 @@ package com.invoicedetector.sdk.pipeline
 import android.content.Context
 import android.graphics.Bitmap
 import com.invoicedetector.sdk.InvoiceDetectorConfig
-import com.invoicedetector.sdk.authenticity.AuthenticityValidator
-import com.invoicedetector.sdk.authenticity.TamperingDetector
 import com.invoicedetector.sdk.classify.InvoiceClassifier
 import com.invoicedetector.sdk.dedupe.DuplicateChecker
 import com.invoicedetector.sdk.extract.InvoiceFieldParser
@@ -22,9 +20,9 @@ import kotlinx.coroutines.withContext
  *
  *   1. Blur gate         - reject out-of-focus shots, ask the user to retake.
  *   2. OCR               - on-device text recognition (no network).
- *   3. Invoice classify  - is this even an invoice?
- *   4. Duplicate check   - cancel if we've seen this bill before (top priority).
- *   5. Authenticity      - flag likely-fake / altered invoices for review.
+ *   3. Invoice classify  - is this an invoice? If not, reject and say so.
+ *   4. Extract fields    - pull out vendor / number / dates / totals / VAT.
+ *   5. Duplicate check   - cancel if we've seen this bill before.
  *   6. Persist           - remember accepted invoices so future copies are caught.
  *
  * All work is moved off the caller's thread via [Dispatchers.Default].
@@ -40,7 +38,6 @@ internal class InvoicePipeline(
     private val textExtractor = TextExtractor()
     private val fieldParser = InvoiceFieldParser()
     private val classifier = InvoiceClassifier(config.classificationThreshold)
-    private val authenticityValidator = AuthenticityValidator(config.authenticityThreshold)
     private val duplicateChecker = DuplicateChecker(store, config.perceptualHashHammingThreshold)
 
     suspend fun run(bitmap: Bitmap): InvoiceResult = withContext(Dispatchers.Default) {
@@ -61,38 +58,26 @@ internal class InvoicePipeline(
                 return@withContext InvoiceResult.Rejected.Unreadable()
             }
 
-            // 3. Field parsing + invoice classification.
+            // 3. Invoice classification - if it isn't an invoice, reject here.
             val invoice = fieldParser.parse(ocr)
             val classification = classifier.classify(ocr, invoice)
             if (!classification.isInvoice) {
                 return@withContext InvoiceResult.Rejected.NotAnInvoice(classification)
             }
 
-            // 4. Duplicate detection (highest-priority rejection).
+            // 4. Duplicate detection.
             val fingerprint = duplicateChecker.fingerprint(bitmap, invoice)
             duplicateChecker.findDuplicate(fingerprint)?.let { match ->
                 return@withContext InvoiceResult.Rejected.Duplicate(match)
             }
 
-            // 5. Authenticity / fake-invoice check.
-            val tampering = if (config.enableImageTamperingCheck) {
-                TamperingDetector.looksTampered(bitmap)
-            } else {
-                false
-            }
-            val authenticity = authenticityValidator.validate(invoice, ocr, tampering)
-            if (!authenticity.isLikelyGenuine) {
-                return@withContext InvoiceResult.Rejected.SuspectedFake(authenticity, invoice)
-            }
-
-            // 6. Accept + remember for future duplicate detection.
+            // 5. Accept + remember for future duplicate detection.
             val recordId = duplicateChecker.remember(fingerprint)
             InvoiceResult.Accepted(
                 recordId = recordId,
                 invoice = invoice,
                 quality = quality,
-                classification = classification,
-                authenticity = authenticity
+                classification = classification
             )
         } catch (t: Throwable) {
             InvoiceResult.Rejected.Error(t)

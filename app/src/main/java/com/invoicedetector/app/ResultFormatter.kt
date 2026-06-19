@@ -2,93 +2,94 @@ package com.invoicedetector.app
 
 import com.invoicedetector.sdk.model.ExtractedInvoice
 import com.invoicedetector.sdk.model.InvoiceResult
+import java.util.Locale
 
-/** Severity used to colour the status line. */
-enum class ResultLevel { OK, WARN, ERROR }
+/** Severity used to colour the verdict banner. */
+enum class ResultLevel { OK, WARN, ERROR, INFO }
 
 /** Presentation model for a processed result. */
 data class FormattedResult(
-    val status: String,
-    val detail: String,
-    val level: ResultLevel
+    val verdict: String,
+    val subtitle: String,
+    val level: ResultLevel,
+    val iconRes: Int,
+    /** label -> value rows shown under the verdict (empty when not applicable). */
+    val fields: List<Pair<String, String>> = emptyList()
 )
 
-/** Turns the SDK's typed result into human-readable text for the demo UI. */
+/** Turns the SDK's typed result into a friendly verdict + fields for the UI. */
 object ResultFormatter {
 
     fun format(result: InvoiceResult): FormattedResult = when (result) {
         is InvoiceResult.Accepted -> FormattedResult(
-            status = "ACCEPTED",
-            detail = buildString {
-                appendLine("Record id: ${result.recordId}")
-                appendLine("Focus score: ${"%.0f".format(result.quality.focusScore)} (min ${"%.0f".format(result.quality.threshold)})")
-                appendLine("Invoice confidence: ${pct(result.classification.score)}")
-                appendLine("Authenticity: ${pct(result.authenticity.score)}")
-                appendLine()
-                append(invoiceFields(result.invoice))
-            },
-            level = ResultLevel.OK
-        )
-
-        is InvoiceResult.Rejected.Blurry -> FormattedResult(
-            status = "BLURRY - RETAKE",
-            detail = "Focus score ${"%.0f".format(result.quality.focusScore)} is below the " +
-                "minimum ${"%.0f".format(result.quality.threshold)}.\n${result.message}",
-            level = ResultLevel.WARN
-        )
-
-        is InvoiceResult.Rejected.Unreadable -> FormattedResult(
-            status = "UNREADABLE - RETAKE",
-            detail = result.message,
-            level = ResultLevel.WARN
+            verdict = "Invoice detected",
+            subtitle = "Looks like a valid invoice (confidence ${pct(result.classification.score)}).",
+            level = ResultLevel.OK,
+            iconRes = R.drawable.ic_check,
+            fields = invoiceFields(result.invoice)
         )
 
         is InvoiceResult.Rejected.NotAnInvoice -> FormattedResult(
-            status = "NOT AN INVOICE",
-            detail = "Confidence ${pct(result.classification.score)} " +
-                "(needs ${pct(result.classification.threshold)}).\n" +
-                "Matched: ${result.classification.matchedKeywords.joinToString().ifEmpty { "none" }}",
-            level = ResultLevel.ERROR
+            verdict = "Not an invoice",
+            subtitle = "Discarded \u2014 this doesn't look like an invoice or receipt " +
+                "(confidence ${pct(result.classification.score)}).",
+            level = ResultLevel.ERROR,
+            iconRes = R.drawable.ic_close
+        )
+
+        is InvoiceResult.Rejected.Blurry -> FormattedResult(
+            verdict = "Too blurry",
+            subtitle = "Discarded \u2014 please retake the photo in better focus.",
+            level = ResultLevel.WARN,
+            iconRes = R.drawable.ic_warning
+        )
+
+        is InvoiceResult.Rejected.Unreadable -> FormattedResult(
+            verdict = "Couldn't read it",
+            subtitle = "No readable text found. Retake the photo in better light.",
+            level = ResultLevel.WARN,
+            iconRes = R.drawable.ic_warning
         )
 
         is InvoiceResult.Rejected.Duplicate -> FormattedResult(
-            status = "DUPLICATE - CANCELLED",
-            detail = buildString {
-                appendLine("Matches stored record #${result.match.existingRecordId}")
-                result.match.existingInvoiceNumber?.let { appendLine("Existing invoice no: $it") }
-                appendLine("Match type: ${result.match.matchType}")
-                appendLine("Similarity: ${pct(result.match.similarity)}")
-            },
-            level = ResultLevel.WARN
-        )
-
-        is InvoiceResult.Rejected.SuspectedFake -> FormattedResult(
-            status = "SUSPECTED FAKE - REVIEW",
-            detail = buildString {
-                appendLine("Authenticity ${pct(result.authenticity.score)} " +
-                    "(needs ${pct(result.authenticity.threshold)})")
-                appendLine("Flags: ${result.authenticity.flags.joinToString()}")
-                appendLine()
-                append(invoiceFields(result.invoice))
-            },
-            level = ResultLevel.ERROR
+            verdict = "Duplicate invoice",
+            subtitle = "Already scanned before \u2014 cancelled.",
+            level = ResultLevel.WARN,
+            iconRes = R.drawable.ic_duplicate,
+            fields = buildList {
+                add("Matches record" to "#${result.match.existingRecordId}")
+                result.match.existingInvoiceNumber?.let { add("Invoice no." to it) }
+                add("Match type" to prettyMatch(result.match.matchType.name))
+                add("Similarity" to pct(result.match.similarity))
+            }
         )
 
         is InvoiceResult.Rejected.Error -> FormattedResult(
-            status = "ERROR",
-            detail = result.message,
-            level = ResultLevel.ERROR
+            verdict = "Something went wrong",
+            subtitle = result.message,
+            level = ResultLevel.ERROR,
+            iconRes = R.drawable.ic_warning
         )
     }
 
-    private fun invoiceFields(inv: ExtractedInvoice): String = buildString {
-        appendLine("Vendor:   ${inv.vendor ?: "-"}")
-        appendLine("Number:   ${inv.invoiceNumber ?: "-"}")
-        appendLine("Date:     ${inv.dateText ?: "-"}")
-        appendLine("Subtotal: ${inv.subtotal ?: "-"}")
-        appendLine("Tax:      ${inv.taxAmount ?: "-"}")
-        appendLine("Total:    ${inv.total ?: "-"} ${inv.currency ?: ""}")
+    /** Only the fields we actually found, formatted for display. */
+    private fun invoiceFields(inv: ExtractedInvoice): List<Pair<String, String>> = buildList {
+        inv.vendor?.let { add("Vendor" to it) }
+        inv.invoiceNumber?.let { add("Invoice no." to it) }
+        inv.dateText?.let { add("Date" to it) }
+        inv.subtotal?.let { add("Subtotal" to money(it, inv.currency)) }
+        inv.taxAmount?.let { add("Tax / VAT" to money(it, inv.currency)) }
+        inv.total?.let { add("Total" to money(it, inv.currency)) }
+        if (isEmpty()) add("Note" to "No fields could be extracted yet.")
     }
+
+    private fun money(value: Double, currency: String?): String {
+        val amount = String.format(Locale.ROOT, "%.2f", value)
+        return if (currency.isNullOrBlank()) amount else "$currency $amount"
+    }
+
+    private fun prettyMatch(raw: String): String =
+        raw.lowercase(Locale.ROOT).replace('_', ' ')
 
     private fun pct(v: Float): String = "${(v * 100).toInt()}%"
 }

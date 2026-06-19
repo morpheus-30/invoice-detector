@@ -29,7 +29,6 @@ sealed interface InvoiceResult {
         val invoice: ExtractedInvoice,
         val quality: QualityReport,
         val classification: ClassificationReport,
-        val authenticity: AuthenticityReport,
         override val message: String = "Invoice accepted."
     ) : InvoiceResult {
         override val recommendedAction: RecommendedAction = RecommendedAction.ACCEPT
@@ -71,16 +70,6 @@ sealed interface InvoiceResult {
                 "Duplicate invoice detected; submission cancelled."
         ) : Rejected {
             override val recommendedAction = RecommendedAction.CANCEL_DUPLICATE
-        }
-
-        /** Authenticity checks failed - likely a fake/altered invoice. */
-        data class SuspectedFake(
-            val authenticity: AuthenticityReport,
-            val invoice: ExtractedInvoice,
-            override val message: String =
-                "Invoice failed authenticity checks and needs manual review."
-        ) : Rejected {
-            override val recommendedAction = RecommendedAction.REVIEW_MANUALLY
         }
 
         /** Something went wrong while processing (I/O, decode, OCR failure). */

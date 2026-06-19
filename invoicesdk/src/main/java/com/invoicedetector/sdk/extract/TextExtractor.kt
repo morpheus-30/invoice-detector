@@ -10,11 +10,35 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
-/** Plain OCR output: the full text plus the individual recognized lines. */
+/**
+ * A single recognized line of text plus its position in the image. Geometry lets
+ * the parser pair a label (e.g. "Total") with the value printed to its right or on
+ * the next row, even when OCR splits them into separate blocks.
+ *
+ * Coordinates are pixels in the (rotation-corrected) image space. When ML Kit does
+ * not report a bounding box, the coordinates are -1 and [hasGeometry] is false.
+ */
+data class OcrLine(
+    val text: String,
+    val left: Int = -1,
+    val top: Int = -1,
+    val right: Int = -1,
+    val bottom: Int = -1
+) {
+    val hasGeometry: Boolean get() = right > left && bottom > top
+    val centerY: Int get() = (top + bottom) / 2
+    val height: Int get() = (bottom - top).coerceAtLeast(1)
+}
+
+/**
+ * OCR output: the full text plus the recognized lines (with geometry).
+ * [lines] is kept as a convenience for code that only needs the strings.
+ */
 data class OcrResult(
     val fullText: String,
-    val lines: List<String>
+    val textLines: List<OcrLine>
 ) {
+    val lines: List<String> get() = textLines.map { it.text }
     val charCount: Int get() = fullText.count { !it.isWhitespace() }
 }
 
@@ -33,13 +57,23 @@ class TextExtractor : Closeable {
             val image = InputImage.fromBitmap(bitmap, normalizeRotation(rotationDegrees))
             recognizer.process(image)
                 .addOnSuccessListener { visionText ->
-                    val lines = ArrayList<String>()
+                    val lines = ArrayList<OcrLine>()
                     for (block in visionText.textBlocks) {
                         for (line in block.lines) {
                             val t = line.text.trim()
-                            if (t.isNotEmpty()) lines.add(t)
+                            if (t.isEmpty()) continue
+                            val box = line.boundingBox
+                            lines += if (box != null) {
+                                OcrLine(t, box.left, box.top, box.right, box.bottom)
+                            } else {
+                                OcrLine(t)
+                            }
                         }
                     }
+                    // Reading order: top-to-bottom, then left-to-right.
+                    lines.sortWith(
+                        compareBy({ if (it.hasGeometry) it.top else 0 }, { if (it.hasGeometry) it.left else 0 })
+                    )
                     cont.resume(OcrResult(visionText.text, lines))
                 }
                 .addOnFailureListener { e ->

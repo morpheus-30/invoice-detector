@@ -28,21 +28,12 @@ data class InvoiceDetectorConfig(
     /** Minimum confidence (0f..1f) for the document to be classified as an invoice. */
     val classificationThreshold: Float = 0.45f,
 
-    /** Minimum authenticity confidence (0f..1f) for an invoice to be accepted. */
-    val authenticityThreshold: Float = 0.5f,
-
     /**
      * Maximum Hamming distance (out of 64 bits) between two perceptual hashes for
      * the images to be treated as the same invoice. 0 = identical; ~10 still catches
      * re-photographed / lightly re-encoded copies.
      */
     val perceptualHashHammingThreshold: Int = 10,
-
-    /**
-     * If true, runs an Error-Level-Analysis style recompression check to flag
-     * possible image tampering. Slightly heavier; off by default for old phones.
-     */
-    val enableImageTamperingCheck: Boolean = false,
 
     /**
      * Minimum number of OCR text characters before we trust extraction at all.
@@ -69,7 +60,6 @@ data class InvoiceDetectorConfig(
         require(blurAnalysisMaxDim in 64..4096) { "blurAnalysisMaxDim out of range" }
         require(ocrMaxDim in 256..8192) { "ocrMaxDim out of range" }
         require(classificationThreshold in 0f..1f) { "classificationThreshold must be 0..1" }
-        require(authenticityThreshold in 0f..1f) { "authenticityThreshold must be 0..1" }
         require(perceptualHashHammingThreshold in 0..64) { "hamming threshold must be 0..64" }
         require(confidentTextLength >= minTextLength) { "confidentTextLength must be >= minTextLength" }
     }
@@ -82,9 +72,7 @@ data class InvoiceDetectorConfig(
         fun blurAnalysisMaxDim(v: Int) = apply { config = config.copy(blurAnalysisMaxDim = v) }
         fun ocrMaxDim(v: Int) = apply { config = config.copy(ocrMaxDim = v) }
         fun classificationThreshold(v: Float) = apply { config = config.copy(classificationThreshold = v) }
-        fun authenticityThreshold(v: Float) = apply { config = config.copy(authenticityThreshold = v) }
         fun perceptualHashHammingThreshold(v: Int) = apply { config = config.copy(perceptualHashHammingThreshold = v) }
-        fun enableImageTamperingCheck(v: Boolean) = apply { config = config.copy(enableImageTamperingCheck = v) }
         fun minTextLength(v: Int) = apply { config = config.copy(minTextLength = v) }
         fun autoDetectOrientation(v: Boolean) = apply { config = config.copy(autoDetectOrientation = v) }
         fun confidentTextLength(v: Int) = apply { config = config.copy(confidentTextLength = v) }

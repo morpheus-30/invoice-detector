@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.invoicedetector.sdk.InvoiceDetector
-import com.invoicedetector.sdk.InvoiceDetectorConfig
 import com.invoicedetector.sdk.model.InvoiceResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,20 +24,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<UiState>(UiState.Idle)
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    private var tamperCheckEnabled = false
-    private var detector: InvoiceDetector = buildDetector()
-
-    private fun buildDetector(): InvoiceDetector {
-        val config = InvoiceDetectorConfig(enableImageTamperingCheck = tamperCheckEnabled)
-        return InvoiceDetector.create(getApplication(), config)
-    }
-
-    fun setTamperCheck(enabled: Boolean) {
-        if (enabled == tamperCheckEnabled) return
-        tamperCheckEnabled = enabled
-        detector.close()
-        detector = buildDetector()
-    }
+    private val detector: InvoiceDetector = InvoiceDetector.create(getApplication())
 
     fun process(uri: Uri) {
         _state.value = UiState.Processing

@@ -1,9 +1,9 @@
 # Invoice Detector (Android, Kotlin) — on-device SDK + demo app
 
-A fully **offline** invoice scanner. Hand it a photo and it decides whether the image
-is a real invoice, whether it's blurry, whether it's a **duplicate** of one you've
-already captured, and whether it looks like a **fake / altered** invoice — then
-extracts the key fields. **No data ever leaves the device** (no external API calls).
+A fully **offline** invoice scanner. Hand it a photo and it tells you whether the
+image **is an invoice or not** (and discards it if not), whether it's blurry, and
+whether it's a **duplicate** of one you've already captured — then extracts the key
+fields. **No data ever leaves the device** (no external API calls).
 
 Built to run on **old / low-end Android phones** (`minSdk 21`, Android 5.0+), with no
 native OpenCV dependency and a small footprint.
@@ -15,12 +15,12 @@ native OpenCV dependency and a small footprint.
 | Requirement | How it's met |
 |---|---|
 | No external API | 100% on-device. Storage sits behind a `DuplicateStore` interface so you can *optionally* point it at a self-hosted home server later — detection still runs on the phone. |
-| "Use models from the internet, not my custom one" | OCR uses **Google ML Kit Text Recognition v2**, a bundled, offline, pre-trained model. Invoice/fake detection use transparent, debuggable heuristics instead of a fragile custom model. |
+| "Use models from the internet, not my custom one" | OCR uses **Google ML Kit Text Recognition v2**, a bundled, offline, pre-trained model. Invoice detection uses transparent, debuggable heuristics instead of a fragile custom model. |
 | Runs on old phones | `minSdk 21`, pure-Kotlin image math, memory-safe bitmap decoding, cheapest checks run first. |
 | Blurry → discard & retake | Laplacian-variance focus score; below threshold returns `Rejected.Blurry`. |
+| Invoice or not → say so | Multilingual, receipt-aware classifier; if it isn't an invoice it returns `Rejected.NotAnInvoice` and the image is discarded. |
 | Detect & cancel duplicates | Perceptual image hash (dHash + Hamming distance) **and** a content fingerprint of the OCR'd fields; returns `Rejected.Duplicate`. |
-| Detect false invoices | Arithmetic check (subtotal + tax = total), required-field and date-sanity checks, optional image-tampering (ELA) signal; returns `Rejected.SuspectedFake`. |
-| Data extraction (later) | Best-effort field parser included now; treated as secondary. |
+| Precise data extraction | Layout-aware parser pairs labels with values using OCR geometry, tuned for European invoices. |
 
 ---
 
@@ -34,9 +34,9 @@ InvoiceDetector/
 │       ├── InvoiceDetectorConfig.kt    # Tunable thresholds
 │       ├── model/                      # InvoiceResult, reports, ExtractedInvoice…
 │       ├── quality/BlurDetector.kt     # Laplacian-variance focus gate
-│       ├── extract/                    # ML Kit OCR + field/amount parsing
+│       ├── extract/                    # ML Kit OCR + layout-aware field parsing
 │       ├── classify/InvoiceClassifier  # "Is this an invoice?" scorer
-│       ├── authenticity/               # Fake/altered-invoice checks (+ optional ELA)
+│       ├── text/InvoiceLexicon         # Multilingual keyword sets (EU languages)
 │       ├── dedupe/                     # Perceptual + content hashing, DuplicateChecker
 │       ├── storage/                    # DuplicateStore interface + Room implementation
 │       └── pipeline/InvoicePipeline.kt # Orchestrates the stages
@@ -50,10 +50,10 @@ InvoiceDetector/
 Stages run cheapest-first so weak devices bail out early:
 
 1. **Blur gate** — out-of-focus → `Rejected.Blurry` (ask user to retake)
-2. **OCR** — ML Kit text recognition; no text → `Rejected.Unreadable`
-3. **Invoice classification** — not an invoice → `Rejected.NotAnInvoice`
-4. **Duplicate check** — seen before → `Rejected.Duplicate` (cancel)
-5. **Authenticity check** — looks fake → `Rejected.SuspectedFake` (manual review)
+2. **OCR** — ML Kit text recognition (auto-orientation); no text → `Rejected.Unreadable`
+3. **Invoice classification** — not an invoice → `Rejected.NotAnInvoice` (discarded)
+4. **Field extraction** — layout-aware parsing of vendor / number / dates / totals / VAT
+5. **Duplicate check** — seen before → `Rejected.Duplicate` (cancel)
 6. **Accept** — store fingerprint for future duplicate detection → `Accepted`
 
 ---
@@ -73,10 +73,9 @@ when (val result = detector.process(imageUri)) {          // suspend fun
     is InvoiceResult.Rejected.Duplicate ->
         cancel(result.match)                              // existingRecordId, matchType
 
-    is InvoiceResult.Rejected.SuspectedFake ->
-        routeForReview(result.authenticity.flags)
+    is InvoiceResult.Rejected.NotAnInvoice ->
+        discardNotAnInvoice(result.message)               // confidence in result.classification
 
-    is InvoiceResult.Rejected.NotAnInvoice,
     is InvoiceResult.Rejected.Unreadable,
     is InvoiceResult.Rejected.Error ->
         showError(result.message)
@@ -86,9 +85,9 @@ detector.close()                                          // releases the OCR en
 ```
 
 Tune behaviour with `InvoiceDetectorConfig` (e.g. `blurThreshold`,
-`perceptualHashHammingThreshold`, `authenticityThreshold`,
-`enableImageTamperingCheck`). Every result also carries a `recommendedAction`
-(`ACCEPT`, `REQUEST_NEW_IMAGE`, `CANCEL_DUPLICATE`, `REVIEW_MANUALLY`, `REJECT`).
+`classificationThreshold`, `perceptualHashHammingThreshold`,
+`autoDetectOrientation`). Every result also carries a `recommendedAction`
+(`ACCEPT`, `REQUEST_NEW_IMAGE`, `CANCEL_DUPLICATE`, `REJECT`).
 
 ### Optional home-server backend
 
@@ -150,12 +149,12 @@ services like Veryfi:
 
 ## Limitations & next steps
 
-- **Field extraction** is heuristic/best-effort by design (the stated priority was
-  detection/duplicate/fake). Improve `InvoiceFieldParser` for your invoice formats.
+- **Field extraction** is layout-aware and tuned for European invoices, but still
+  heuristic — extend `InvoiceFieldParser` / `text/InvoiceLexicon.kt` for your formats.
 - The **perceptual duplicate scan** is a linear comparison — fine for personal,
   on-device datasets; for very large indexes use an indexed/BK-tree store.
-- **Image-tampering (ELA)** is a heuristic signal, off by default; it contributes to
-  the authenticity score rather than hard-failing on its own.
+- The **fake / altered-invoice check was removed** for now (it was over-flagging).
+  The pipeline focuses on invoice-or-not detection, duplicates, and extraction.
 - OCR is **Latin script** (covers the listed European languages). Add other ML Kit
   script models (e.g. Cyrillic, Devanagari) if you need non-Latin invoices.
 ```

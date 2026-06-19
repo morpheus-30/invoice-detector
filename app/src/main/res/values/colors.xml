@@ -1,7 +1,13 @@
 <resources>
     <color name="brand_primary">#1565C0</color>
+    <color name="brand_primary_dark">#0D47A1</color>
     <color name="white">#FFFFFFFF</color>
+
     <color name="ok_green">#2E7D32</color>
     <color name="warn_amber">#EF6C00</color>
     <color name="error_red">#C62828</color>
+    <color name="info_blue">#1565C0</color>
+
+    <color name="surface_muted">#F2F4F7</color>
+    <color name="text_secondary">#5F6B7A</color>
 </resources>
