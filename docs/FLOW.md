@@ -163,3 +163,32 @@ val config = InvoiceDetectorConfig.Builder()
 
 val detector = InvoiceDetector.create(context, config)
 ```
+
+
+## 6. Duplicate detection strategy
+
+A second *photo* of the same invoice has a different image hash and usually a
+different perceptual hash, so image-based checks alone miss it. Duplicate detection
+therefore tries four signals in order and stops at the first hit:
+
+```mermaid
+flowchart TD
+    A[New invoice fingerprint] --> B{Exact content fingerprint<br/>number+total hash matches?}
+    B -- Yes --> D([Duplicate: CONTENT_FINGERPRINT]):::warn
+    B -- No --> C{Fuzzy field match?<br/>number ~matches + total close}
+    C -- Yes --> E([Duplicate: CONTENT_FUZZY<br/>handles a different photo]):::warn
+    C -- No --> F{Exact image hash matches?}
+    F -- Yes --> G([Duplicate: EXACT_IMAGE]):::warn
+    F -- No --> H{Perceptual hash within<br/>Hamming threshold?}
+    H -- Yes --> I([Duplicate: PERCEPTUAL_IMAGE]):::warn
+    H -- No --> J([New invoice - store it]):::ok
+
+    classDef ok fill:#2E7D32,color:#fff;
+    classDef warn fill:#EF6C00,color:#fff;
+```
+
+**Why fuzzy field matching matters:** the invoice number and total are the same
+across two photos of one bill. The fuzzy step compares the *extracted fields* with
+tolerance — invoice numbers by edit-distance (so `INV-001` still matches `INV-0O1`
+from an OCR slip), confirmed by the total within ~1%, or by total + date + vendor
+when no number was read. That catches re-photographed duplicates that hashing can't.

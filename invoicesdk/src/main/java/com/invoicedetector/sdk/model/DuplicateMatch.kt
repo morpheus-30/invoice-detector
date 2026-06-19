@@ -18,6 +18,13 @@ data class DuplicateMatch(
         /** Same normalized invoice number + total -> almost certainly the same bill. */
         CONTENT_FINGERPRINT,
 
+        /**
+         * Extracted fields (invoice number / total / date / vendor) matched a stored
+         * record within tolerance, even though the photos differ and OCR wasn't
+         * character-identical. This is what catches "another photo of the same invoice".
+         */
+        CONTENT_FUZZY,
+
         /** Visually near-identical image (perceptual hash within threshold). */
         PERCEPTUAL_IMAGE,
 

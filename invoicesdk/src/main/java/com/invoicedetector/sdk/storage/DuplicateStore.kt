@@ -24,6 +24,17 @@ interface DuplicateStore {
      */
     suspend fun allPerceptualHashes(): List<PerceptualEntry>
 
+    /**
+     * Returns stored records that carry an invoice number and/or total, so the
+     * caller can do fuzzy field-based matching (catching a *different photo* of the
+     * same invoice, where image hashes differ). Linear scan is fine for personal,
+     * on-device datasets; a server-backed store may override with an index.
+     *
+     * Defaults to empty so existing custom implementations keep compiling; override
+     * it to enable fuzzy duplicate detection.
+     */
+    suspend fun contentCandidates(): List<StoredInvoice> = emptyList()
+
     /** Fetch a full record by id (used to describe a perceptual-hash match). */
     suspend fun getById(id: Long): StoredInvoice?
 

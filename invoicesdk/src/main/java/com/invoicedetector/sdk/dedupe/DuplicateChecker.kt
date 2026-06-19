@@ -8,12 +8,14 @@ import com.invoicedetector.sdk.storage.InvoiceFingerprint
 
 /**
  * Decides whether a freshly-scanned invoice is a duplicate of something already in
- * the [DuplicateStore], using three escalating signals:
+ * the [DuplicateStore], using escalating signals (strongest / most meaningful first):
  *
- *  1. Content fingerprint  - strongest: same invoice number + total -> same bill,
- *     even if the photo is completely different.
- *  2. Exact image hash     - the identical file was uploaded before.
- *  3. Perceptual hash      - a visually near-identical photo (Hamming distance
+ *  1. Content fingerprint  - exact normalized invoice number + total (fast O(1) path).
+ *  2. Fuzzy content match  - extracted fields match within tolerance. This is what
+ *     catches a *different photo* of the same invoice, where the image bytes and
+ *     perceptual hash differ but the invoice number/total are (almost) the same.
+ *  3. Exact image hash     - the identical file was uploaded before.
+ *  4. Perceptual hash      - a visually near-identical photo (Hamming distance
  *     within the configured threshold).
  */
 class DuplicateChecker(
@@ -35,7 +37,7 @@ class DuplicateChecker(
 
     /** Returns the strongest duplicate match for [fp], or null if it looks new. */
     suspend fun findDuplicate(fp: InvoiceFingerprint): DuplicateMatch? {
-        // 1. Content fingerprint.
+        // 1. Exact content fingerprint (fast path: OCR read the number+total identically).
         fp.contentFingerprint?.let { cf ->
             store.findByContentFingerprint(cf)?.let { existing ->
                 return DuplicateMatch(
@@ -47,7 +49,25 @@ class DuplicateChecker(
             }
         }
 
-        // 2. Exact image hash.
+        // 2. Fuzzy content match against stored records - tolerant of OCR differences
+        //    between two photos of the same invoice. Pick the best-scoring match.
+        if (fp.invoiceNumber != null || fp.total != null) {
+            var best: DuplicateMatch? = null
+            for (candidate in store.contentCandidates()) {
+                val score = ContentMatcher.compare(fp, candidate)
+                if (score.isDuplicate && (best == null || score.similarity > best.similarity)) {
+                    best = DuplicateMatch(
+                        existingRecordId = candidate.id,
+                        existingInvoiceNumber = candidate.invoiceNumber,
+                        matchType = DuplicateMatch.MatchType.CONTENT_FUZZY,
+                        similarity = score.similarity
+                    )
+                }
+            }
+            best?.let { return it }
+        }
+
+        // 3. Exact image hash.
         store.findByExactImageHash(fp.exactImageHash)?.let { existing ->
             return DuplicateMatch(
                 existingRecordId = existing.id,
@@ -57,7 +77,7 @@ class DuplicateChecker(
             )
         }
 
-        // 3. Perceptual nearest neighbour.
+        // 4. Perceptual nearest neighbour.
         var bestId = -1L
         var bestDistance = Int.MAX_VALUE
         for (entry in store.allPerceptualHashes()) {

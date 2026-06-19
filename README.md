@@ -19,7 +19,7 @@ native OpenCV dependency and a small footprint.
 | Runs on old phones | `minSdk 21`, pure-Kotlin image math, memory-safe bitmap decoding, cheapest checks run first. |
 | Blurry → discard & retake | Laplacian-variance focus score; below threshold returns `Rejected.Blurry`. |
 | Invoice or not → say so | Multilingual, receipt-aware classifier; if it isn't an invoice it returns `Rejected.NotAnInvoice` and the image is discarded. |
-| Detect & cancel duplicates | Perceptual image hash (dHash + Hamming distance) **and** a content fingerprint of the OCR'd fields; returns `Rejected.Duplicate`. |
+| Detect & cancel duplicates | Four layers: exact content fingerprint, **fuzzy field match** (catches another *photo* of the same invoice despite OCR differences), exact image hash, and perceptual image hash; returns `Rejected.Duplicate`. |
 | Precise data extraction | Layout-aware parser pairs labels with values using OCR geometry, tuned for European invoices. |
 
 ---

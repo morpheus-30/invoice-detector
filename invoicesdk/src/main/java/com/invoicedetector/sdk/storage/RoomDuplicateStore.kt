@@ -26,6 +26,9 @@ class RoomDuplicateStore private constructor(
     override suspend fun getById(id: Long): StoredInvoice? =
         dao.getById(id)?.toStored()
 
+    override suspend fun contentCandidates(): List<StoredInvoice> =
+        dao.contentCandidates().map { it.toStored() }
+
     override suspend fun insert(fingerprint: InvoiceFingerprint): Long =
         dao.insert(fingerprint.toEntity())
 
