@@ -132,6 +132,22 @@ the `app` configuration on a device/emulator.
 
 ---
 
+## Photographed receipts, rotation & languages
+
+Tuned for real **phone-camera photos** (not just clean scans), similar in spirit to
+services like Veryfi:
+
+- **Any rotation** — if the upright OCR pass looks weak, the pipeline retries the
+  image at 90/180/270 and keeps the best result (ML Kit rotates internally, so no
+  extra bitmap allocations). EXIF orientation is also applied on load.
+- **Receipts, not just formal invoices** — the classifier scores on *structure*
+  (a total, several money amounts, a tax line, a date, currency, qty/price columns),
+  so a photographed shop receipt passes even when it never says the word "invoice".
+- **European languages** — OCR uses ML Kit's Latin-script model, and the classifier +
+  field parser understand keywords across EN/FR/DE/ES/IT/NL/PT/PL/SE/DK/NO/FI
+  (e.g. `facture`/`rechnung`/`factura`, `total`/`gesamt`/`totale`,
+  `tva`/`mwst`/`iva`/`btw`/`moms`). See `text/InvoiceLexicon.kt`.
+
 ## Limitations & next steps
 
 - **Field extraction** is heuristic/best-effort by design (the stated priority was
@@ -140,5 +156,6 @@ the `app` configuration on a device/emulator.
   on-device datasets; for very large indexes use an indexed/BK-tree store.
 - **Image-tampering (ELA)** is a heuristic signal, off by default; it contributes to
   the authenticity score rather than hard-failing on its own.
-- OCR uses the **Latin** script model. Add other ML Kit script models if needed.
+- OCR is **Latin script** (covers the listed European languages). Add other ML Kit
+  script models (e.g. Cyrillic, Devanagari) if you need non-Latin invoices.
 ```

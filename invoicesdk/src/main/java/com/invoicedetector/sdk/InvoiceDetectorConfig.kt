@@ -10,10 +10,11 @@ data class InvoiceDetectorConfig(
     /**
      * Minimum Laplacian-variance focus score for an image to be considered sharp.
      * The score is computed on a grayscale image normalized to [blurAnalysisMaxDim],
-     * so the threshold is resolution-independent. Lower this if too many valid
-     * photos are rejected on low-quality cameras.
+     * so the threshold is resolution-independent. Tuned a little lenient (90) for
+     * real phone-camera photos, which have shadows/uneven lighting; lower further if
+     * valid photos are rejected on weak cameras.
      */
-    val blurThreshold: Double = 110.0,
+    val blurThreshold: Double = 90.0,
 
     /** Longest edge (px) the image is scaled to before blur analysis. Small = fast. */
     val blurAnalysisMaxDim: Int = 600,
@@ -47,7 +48,21 @@ data class InvoiceDetectorConfig(
      * Minimum number of OCR text characters before we trust extraction at all.
      * Below this the result is treated as [com.invoicedetector.sdk.model.InvoiceResult.Rejected.Unreadable].
      */
-    val minTextLength: Int = 12
+    val minTextLength: Int = 12,
+
+    /**
+     * If true, when the upright OCR pass looks weak the pipeline retries the image
+     * rotated 90/180/270 and keeps the best result. Handles phone-camera photos
+     * taken at any angle and images without EXIF orientation.
+     */
+    val autoDetectOrientation: Boolean = true,
+
+    /**
+     * OCR char count at/above which the upright orientation is accepted without
+     * trying other rotations. Keeps the common (already-upright) case to a single
+     * OCR pass while still rescuing sideways/upside-down photos.
+     */
+    val confidentTextLength: Int = 40
 ) {
     init {
         require(blurThreshold >= 0) { "blurThreshold must be >= 0" }
@@ -56,6 +71,7 @@ data class InvoiceDetectorConfig(
         require(classificationThreshold in 0f..1f) { "classificationThreshold must be 0..1" }
         require(authenticityThreshold in 0f..1f) { "authenticityThreshold must be 0..1" }
         require(perceptualHashHammingThreshold in 0..64) { "hamming threshold must be 0..64" }
+        require(confidentTextLength >= minTextLength) { "confidentTextLength must be >= minTextLength" }
     }
 
     /** Fluent builder, primarily for Java callers. */
@@ -70,6 +86,8 @@ data class InvoiceDetectorConfig(
         fun perceptualHashHammingThreshold(v: Int) = apply { config = config.copy(perceptualHashHammingThreshold = v) }
         fun enableImageTamperingCheck(v: Boolean) = apply { config = config.copy(enableImageTamperingCheck = v) }
         fun minTextLength(v: Int) = apply { config = config.copy(minTextLength = v) }
+        fun autoDetectOrientation(v: Boolean) = apply { config = config.copy(autoDetectOrientation = v) }
+        fun confidentTextLength(v: Int) = apply { config = config.copy(confidentTextLength = v) }
 
         fun build(): InvoiceDetectorConfig = config
     }

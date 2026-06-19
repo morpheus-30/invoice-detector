@@ -28,9 +28,9 @@ class TextExtractor : Closeable {
     private val recognizer: TextRecognizer =
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    suspend fun extract(bitmap: Bitmap): OcrResult =
+    suspend fun extract(bitmap: Bitmap, rotationDegrees: Int = 0): OcrResult =
         suspendCancellableCoroutine { cont ->
-            val image = InputImage.fromBitmap(bitmap, 0)
+            val image = InputImage.fromBitmap(bitmap, normalizeRotation(rotationDegrees))
             recognizer.process(image)
                 .addOnSuccessListener { visionText ->
                     val lines = ArrayList<String>()
@@ -49,5 +49,10 @@ class TextExtractor : Closeable {
 
     override fun close() {
         recognizer.close()
+    }
+
+    private companion object {
+        /** ML Kit only accepts 0/90/180/270. */
+        fun normalizeRotation(degrees: Int): Int = ((degrees % 360) + 360) % 360 / 90 * 90
     }
 }

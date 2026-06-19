@@ -51,8 +51,12 @@ internal class InvoicePipeline(
                 return@withContext InvoiceResult.Rejected.Blurry(quality)
             }
 
-            // 2. OCR.
-            val ocr = textExtractor.extract(bitmap)
+            // 2. OCR with automatic orientation handling (phone photos can be
+            //    rotated 90/180/270 and may carry no EXIF). We OCR upright first and,
+            //    if the text looks weak, retry the other orientations and keep the
+            //    richest result. This is cheap: ML Kit rotates internally, so no
+            //    extra bitmap copies are allocated.
+            val ocr = extractBestOrientation(bitmap)
             if (ocr.charCount < config.minTextLength) {
                 return@withContext InvoiceResult.Rejected.Unreadable()
             }
@@ -97,6 +101,26 @@ internal class InvoicePipeline(
 
     suspend fun forget(recordId: Long): Boolean =
         withContext(Dispatchers.Default) { store.delete(recordId) }
+
+    /**
+     * OCRs the image trying multiple orientations and returns the best result.
+     * Stops early at the upright orientation when it already yields confident text,
+     * so we usually pay for a single OCR pass.
+     */
+    private suspend fun extractBestOrientation(bitmap: Bitmap): com.invoicedetector.sdk.extract.OcrResult {
+        val upright = textExtractor.extract(bitmap, 0)
+        if (!config.autoDetectOrientation || upright.charCount >= config.confidentTextLength) {
+            return upright
+        }
+        var best = upright
+        for (degrees in intArrayOf(90, 180, 270)) {
+            val candidate = textExtractor.extract(bitmap, degrees)
+            if (candidate.charCount > best.charCount) best = candidate
+            // Good enough once we clear the confidence bar.
+            if (best.charCount >= config.confidentTextLength) break
+        }
+        return best
+    }
 
     suspend fun clearIndex() = withContext(Dispatchers.Default) { store.clear() }
 
