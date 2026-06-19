@@ -76,3 +76,90 @@ flowchart TD
     CL --> LX
     DC --> ST
 ```
+
+
+## 4. Sequence (async / coroutine view)
+
+Shows the round-trips over time, including the ML Kit OCR callback and the
+auto-orientation retries. `process()` is a `suspend` function; the heavy work runs on
+`Dispatchers.Default`, so the UI thread is never blocked.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as MainActivity
+    participant VM as MainViewModel
+    participant Det as InvoiceDetector
+    participant Pipe as InvoicePipeline
+    participant OCR as ML Kit (TextExtractor)
+    participant Store as Room DuplicateStore
+
+    User->>UI: pick / capture photo
+    UI->>VM: process(uri)
+    VM->>Det: process(uri)  (suspend)
+    Det->>Det: decode bitmap + EXIF rotate + downscale
+    Det->>Pipe: run(bitmap)  [Dispatchers.Default]
+
+    Pipe->>Pipe: blur check (Laplacian variance)
+    alt too blurry
+        Pipe-->>VM: Rejected.Blurry
+        VM-->>UI: render "Too blurry"
+    else sharp
+        Pipe->>OCR: extract(bitmap, 0°)
+        OCR-->>Pipe: text @ 0°
+        opt text looks weak (< confidentTextLength)
+            Pipe->>OCR: extract @ 90° / 180° / 270°
+            OCR-->>Pipe: best-of rotations
+        end
+
+        alt not enough text
+            Pipe-->>VM: Rejected.Unreadable
+        else
+            Pipe->>Pipe: parse fields + classify
+            alt not an invoice
+                Pipe-->>VM: Rejected.NotAnInvoice (discard)
+            else is an invoice
+                Pipe->>Pipe: fingerprint (dHash + content hash)
+                Pipe->>Store: find duplicate?
+                Store-->>Pipe: match? / none
+                alt duplicate
+                    Pipe-->>VM: Rejected.Duplicate (cancel)
+                else new
+                    Pipe->>Store: insert fingerprint
+                    Store-->>Pipe: recordId
+                    Pipe-->>VM: Accepted + fields
+                end
+            end
+        end
+        VM-->>UI: render verdict card
+    end
+    UI-->>User: show result
+```
+
+## 5. Decision thresholds (from `InvoiceDetectorConfig`)
+
+Each decision point in the pipeline maps to a tunable config value:
+
+| Stage / decision | Config field | Default | Meaning |
+|---|---|---|---|
+| Pre-OCR downscale | `ocrMaxDim` | `1024` px | Longest edge before OCR (memory-safe on old phones). |
+| Blur downscale | `blurAnalysisMaxDim` | `600` px | Longest edge for the focus computation. |
+| **Sharp enough?** | `blurThreshold` | `90.0` | Min Laplacian variance; below it → `Blurry`. Lower if valid photos get rejected. |
+| Orientation retry | `autoDetectOrientation` | `true` | Retry OCR at 90/180/270 when upright text is weak. |
+| Skip-retry shortcut | `confidentTextLength` | `40` chars | If upright OCR already yields this much text, don't try other rotations. |
+| **Enough text?** | `minTextLength` | `12` chars | Below it → `Unreadable`. |
+| **Is it an invoice?** | `classificationThreshold` | `0.45` (0–1) | Min classifier score; below it → `NotAnInvoice`. Raise to be stricter. |
+| **Duplicate?** | `perceptualHashHammingThreshold` | `10` (of 64 bits) | Max hash distance to treat two photos as the same invoice. Lower = stricter. |
+
+Override any of them via the builder, e.g.:
+
+```kotlin
+val config = InvoiceDetectorConfig.Builder()
+    .blurThreshold(70.0)               // accept slightly softer photos
+    .classificationThreshold(0.40f)    // be a bit more lenient about "is it an invoice"
+    .perceptualHashHammingThreshold(8) // stricter duplicate matching
+    .build()
+
+val detector = InvoiceDetector.create(context, config)
+```
